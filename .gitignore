@@ -8,3 +8,6 @@ node_modules/
 coverage/
 supabase/.branches/
 supabase/.temp/
+
+# Generated Next.js types
+next-env.d.ts

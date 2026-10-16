@@ -11,3 +11,4 @@ supabase/.temp/
 
 # Generated Next.js types
 next-env.d.ts
+*.tsbuildinfo

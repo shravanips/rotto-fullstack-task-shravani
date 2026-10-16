@@ -12,3 +12,6 @@ supabase/.temp/
 # Generated Next.js types
 next-env.d.ts
 *.tsbuildinfo
+
+# Local assessment datasets
+data/*.json

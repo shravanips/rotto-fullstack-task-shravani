@@ -55,74 +55,47 @@ export async function POST(request: Request) {
 
     // Temporary implementation: consume the quota before saving.
     // We'll make quota + search creation transactional next.
-    const { data: quotaRows, error: quotaError } =
-      await auth.supabase.rpc("consume_search_quota", {
+
+
+    // One database transaction creates the search, snapshots
+    // every ranked result, and consumes the search credit.
+    const { data: createdRows, error: createError } =
+      await auth.supabase.rpc("create_search_atomic", {
         p_company_id: auth.companyId,
+        p_recruiter_id: auth.userId,
+        p_brief: brief.trim(),
+        p_filters: filters,
+        p_matches: orderedMatches.map(
+          (match: {
+            candidate_id: string;
+            rank_score: number;
+          }) => ({
+            candidate_id: match.candidate_id,
+            rank_score: match.rank_score,
+          })
+        ),
       });
 
-    if (quotaError) {
-      throw quotaError;
+    if (createError) {
+      throw createError;
     }
 
-    const quota = quotaRows?.[0];
+    const created = createdRows?.[0];
 
-    if (!quota?.allowed) {
+    if (!created?.search_id) {
       return NextResponse.json(
         { error: "No free searches remaining" },
         { status: 402 }
       );
     }
 
-    const { data: savedSearch, error: saveError } =
-      await auth.supabase
-        .from("searches")
-        .insert({
-          company_id: auth.companyId,
-          recruiter_id: auth.userId,
-          brief: brief.trim(),
-          filters,
-          total: orderedMatches.length,
-        })
-        .select("id")
-        .single();
-
-    if (saveError || !savedSearch) {
-      throw saveError ?? new Error("Could not save search");
-    }
-
-    const rows = orderedMatches.map(
-      (
-        match: {
-          candidate_id: string;
-          rank_score: number;
-        },
-        index: number
-      ) => ({
-        search_id: savedSearch.id,
-        candidate_id: match.candidate_id,
-        position: index,
-        rank_score: match.rank_score,
-      })
-    );
-
-    // Insert snapshots in batches.
-    for (let i = 0; i < rows.length; i += 200) {
-      const { error } = await auth.supabase
-        .from("search_results")
-        .insert(rows.slice(i, i + 200));
-
-      if (error) {
-        throw error;
-      }
-    }
-
     return NextResponse.json({
-      search_id: savedSearch.id,
+      search_id: created.search_id,
       filters,
       total: orderedMatches.length,
       results: orderedMatches.slice(0, 20),
-      searches_remaining: quota.remaining,
-    });
+      searches_remaining: created.searches_remaining,
+    });screenTop
   } catch (error) {
     console.error("Search API failed:", error);
 

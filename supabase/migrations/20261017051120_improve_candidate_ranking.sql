@@ -111,6 +111,6 @@ as $$
     count(*) over () as total_count
   from matching m
   order by m.score desc, m.id asc
-  limit greatest(0, least(p_limit, 100))
+  limit greatest(0, least(p_limit, 5000))
   offset greatest(0, p_offset);
 $$;

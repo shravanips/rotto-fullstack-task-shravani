@@ -9,6 +9,11 @@ import {
   
   export function mockParseBrief(brief: string): SearchFilters {
     const text = brief.toLowerCase();
+
+    // Language proficiency is not represented in our candidate filters.
+    if (/\b(?:speak|speaks|speaking|fluent in|proficient in)\s+japanese\b/i.test(brief)) {
+      throw new Error("Unsupported search requirements: Japanese language proficiency");
+    }
   
     const filters: SearchFilters = {
       ...emptySearchFilters,
@@ -55,6 +60,7 @@ import {
     // Determine skills
     const supportedSkills = [
       "React",
+      "Enterprise Sales",
       "Python",
       "AWS",
       "Go",
@@ -87,7 +93,9 @@ import {
     // Determine company type
     if (text.includes("startup")) {
       filters.company_type = "startup";
-    } else if (text.includes("enterprise")) {
+    } else if (
+      /\b(?:worked|working|experience)\s+(?:at|for|in)\s+(?:an?\s+)?enterprise\s+(?:company|organization|business)\b/i.test(brief)
+    ) {
       filters.company_type = "enterprise";
     }
   

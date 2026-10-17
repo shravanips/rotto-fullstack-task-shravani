@@ -73,6 +73,17 @@ function locationText(location: unknown): string {
   return "";
 }
 
+function candidateInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+
+  if (parts.length === 0) return "?";
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -81,6 +92,58 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const [brief, setBrief] = useState("");
+  const [animatedBrief, setAnimatedBrief] = useState("");
+  const [briefFocused, setBriefFocused] = useState(false);
+  const [briefInteracted, setBriefInteracted] = useState(false);
+
+  useEffect(() => {
+    if (brief || briefFocused) {
+      return;
+    }
+
+    const examples = [
+      "Senior React engineers in New York with startup experience",
+      "Machine learning engineers with Python and PyTorch",
+      "Product designers in San Francisco with Figma experience",
+    ];
+
+    let exampleIndex = 0;
+    let characterIndex = 0;
+    let deleting = false;
+    let timeout: ReturnType<typeof setTimeout>;
+
+    function animate() {
+      const example = examples[exampleIndex];
+
+      if (!deleting) {
+        characterIndex++;
+        setAnimatedBrief(example.slice(0, characterIndex));
+
+        if (characterIndex >= example.length) {
+          deleting = true;
+          timeout = setTimeout(animate, 1700);
+          return;
+        }
+      } else {
+        characterIndex--;
+        setAnimatedBrief(example.slice(0, characterIndex));
+
+        if (characterIndex <= 0) {
+          deleting = false;
+          exampleIndex = (exampleIndex + 1) % examples.length;
+          timeout = setTimeout(animate, 450);
+          return;
+        }
+      }
+
+      timeout = setTimeout(animate, deleting ? 25 : 65);
+    }
+
+    timeout = setTimeout(animate, 400);
+
+    return () => clearTimeout(timeout);
+  }, [brief, briefFocused, briefInteracted]);
+
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
 
@@ -114,6 +177,25 @@ export default function DashboardPage() {
         router.replace("/login");
         return;
       }
+
+      // Clear temporary search state when a recruiter signs in.
+      // Saved briefs and shortlists are loaded separately for their company.
+      setBrief("");
+      setAnimatedBrief("");
+      setBriefFocused(false);
+      setBriefInteracted(false);
+      setSearchId(null);
+      setResults([]);
+      setProfiles({});
+      setTotal(0);
+      setPage(1);
+      setFilters({});
+      setPlan(null);
+      setSavedBriefs([]);
+      setShortlists([]);
+      setSelectedShortlistId("");
+      setShortlistMembers([]);
+      setWorkspaceMessage("");
 
       setEmail(auth.user.email ?? "");
 
@@ -543,30 +625,42 @@ useEffect(() => {
   const totalPages = Math.ceil(total / 20);
 
   return (
-    <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-900">
-      <div className="mx-auto max-w-6xl">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              Rotto
-            </h1>
-            <p className="mt-1 text-slate-600">
-              {company} · Recruiter workspace
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              {email}
-            </p>
-          </div>
+    <main className="min-h-screen bg-[#fafafa] px-4 py-6 text-[#222222] sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <header className="sticky top-4 z-30 mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 rounded-full border border-[#ece8f5] bg-white/95 px-5 py-3 shadow-[0_8px_35px_rgba(36,24,75,0.07)] backdrop-blur-xl sm:px-7">
+          <a
+            href="#search"
+            className="text-2xl font-extrabold tracking-[-0.07em] text-[#222222]"
+          >
+            rotto<span className="text-[#7658f6]">.</span>
+          </a>
 
-          <div className="flex items-center gap-3">
+          <nav aria-label="Workspace navigation" className="flex flex-wrap items-center gap-4 text-xs font-semibold text-[#666] sm:gap-6 sm:text-sm">
+            <a href="#search" className="hover:text-[#7658f6]">
+              Search
+            </a>
+            <a href="#saved-briefs" className="hover:text-[#7658f6]">
+              Saved briefs
+            </a>
+            <a href="#shortlists" className="hover:text-[#7658f6]">
+              Shortlists
+            </a>
+            <a href="#saved-candidates" className="hover:text-[#7658f6]">
+              Candidates
+            </a>
+          </nav>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="hidden text-xs font-semibold text-[#777] lg:inline">
+              {company}
+            </span>
+
             {plan && (
-              <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm">
-                <span className="font-semibold capitalize">
-                  {plan.plan} plan
-                </span>
-                <span className="ml-2 text-slate-500">
+              <div className="rounded-full bg-[#f2eeff] px-3 py-2 text-xs text-[#6244e6]">
+                <span className="font-bold capitalize">{plan.plan}</span>
+                <span className="ml-2">
                   {plan.searches_remaining === null
-                    ? "Unlimited searches"
+                    ? "Unlimited"
                     : `${plan.searches_remaining} searches left`}
                 </span>
               </div>
@@ -574,16 +668,92 @@ useEffect(() => {
 
             <button
               onClick={handleLogout}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-100"
+              className="rounded-full border border-[#e8e2f5] bg-white px-4 py-2 text-xs font-semibold hover:bg-[#f7f4ff]"
             >
               Sign out
             </button>
           </div>
         </header>
 
+        <p className="mt-3 text-center text-xs text-[#888]">
+          {company} · Recruiter workspace · {email}
+        </p>
 
-        <section className="mt-8 grid gap-5 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+
+        <section id="search" className="rotto-fade-up scroll-mt-28 pt-16 sm:pt-24">
+          <div className="mb-12 text-center">
+            <p className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-[#7658F6]">
+              AI-powered talent search
+            </p>
+
+            <h2 className="text-4xl font-extrabold tracking-[-0.055em] text-[#222222] sm:text-5xl lg:text-6xl">
+              ChatGPT for{" "}
+              <span className="rotto-highlight-purple">hiring.</span>
+            </h2>
+
+            <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[#777777] sm:text-base">
+              Describe your ideal candidate in plain English.
+              Find the right people from 5,000 candidate profiles.
+            </p>
+          </div>
+
+          <form
+            onSubmit={handleSearch}
+            className="rotto-search-glow mx-auto max-w-5xl rounded-[28px] border border-[#e4d9ff] bg-white p-5 shadow-[0_20px_70px_rgba(118,88,246,0.10)] sm:p-7"
+          >
+            <label htmlFor="brief" className="sr-only">
+              Candidate search brief
+            </label>
+
+            <textarea
+              id="brief"
+              value={brief}
+              onChange={(event) => {
+                setBriefInteracted(true);
+                setBrief(event.target.value);
+              }}
+              placeholder={
+                briefFocused
+                  ? "Describe your ideal candidate..."
+                  : animatedBrief || "Describe your ideal candidate..."
+              }
+              onFocus={() => {
+                setBriefFocused(true);
+                setBriefInteracted(true);
+              }}
+              onBlur={() => setBriefFocused(false)}
+              rows={3}
+              maxLength={2000}
+              className="min-h-32 w-full resize-y rounded-2xl border border-[#e8e2f5] bg-[#fcfbff] p-5 text-base leading-7 text-[#222222] outline-none placeholder:text-[#a5a0b1] focus:border-[#a992ff] focus:ring-2 focus:ring-[#e8e0ff]"
+            />
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                Filters are extracted from your brief, then applied to the candidate database.
+              </p>
+
+              <button
+                type="submit"
+                disabled={searching || !brief.trim()}
+                className="rounded-xl bg-[#7658f6] px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#6244e6] disabled:cursor-not-allowed disabled:bg-[#b4a4ff] disabled:text-white"
+              >
+                {searching ? "Working..." : "Search candidates"}
+              </button>
+            </div>
+          </form>
+
+          {error && (
+            <p
+              role="alert"
+              className="mx-auto mt-5 max-w-5xl rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            >
+              {error}
+            </p>
+          )}
+        </section>
+
+        <section className="mt-12 grid gap-5 md:grid-cols-2">
+          <div id="saved-briefs" className="scroll-mt-28 rounded-3xl border border-[#e9e3f5] bg-[#f5f0ff] p-6">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold">Saved briefs</h2>
               <button
@@ -625,7 +795,10 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <div
+            id="shortlists"
+            className="scroll-mt-28 rounded-3xl border border-[#dcece3] bg-[#eaf6ef] p-6"
+          >
             <h2 className="text-lg font-semibold">Shortlists</h2>
 
             <p className="mt-2 text-xs text-slate-500">
@@ -688,7 +861,10 @@ useEffect(() => {
         )}
 
 
-        <section className="mt-5 rounded-xl border border-slate-200 bg-white p-5">
+        <section
+          id="saved-candidates"
+          className="mt-6 scroll-mt-28 rounded-[28px] border border-[#eee4f3] bg-[#fffafd] p-6 sm:p-8"
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">
@@ -717,11 +893,18 @@ useEffect(() => {
               {shortlistMembers.map((candidate) => (
                 <div
                   key={candidate.id}
-                  className="rounded-lg border border-slate-200 p-4"
+                  className="rotto-hover-card rounded-[22px] border border-[#ece5f5] bg-white p-5 shadow-[0_5px_20px_rgba(31,25,59,0.025)]"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-semibold text-slate-900">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div
+                        aria-hidden="true"
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#e9deff] text-sm font-extrabold text-[#6b49d6]"
+                      >
+                        {candidateInitials(candidate.full_name)}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-base font-extrabold tracking-tight text-[#24212d]">
                         {candidate.full_name}
                       </h3>
 
@@ -734,6 +917,7 @@ useEffect(() => {
                       <p className="mt-1 text-xs text-slate-500">
                         {locationText(candidate.location)}
                       </p>
+                      </div>
                     </div>
 
                     <button
@@ -753,7 +937,7 @@ useEffect(() => {
                       {candidate.skills.slice(0, 5).map((skill) => (
                         <span
                           key={skill}
-                          className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600"
+                          className="rounded-full bg-[#f0ebff] px-3 py-1.5 text-xs font-medium text-[#6650a5]"
                         >
                           {skill}
                         </span>
@@ -768,56 +952,8 @@ useEffect(() => {
 
 
 
-        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">
-            Find your next hire
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Describe the person you want to find in plain English.
-          </p>
-
-          <form onSubmit={handleSearch} className="mt-5">
-            <label htmlFor="brief" className="sr-only">
-              Candidate search brief
-            </label>
-
-            <textarea
-              id="brief"
-              value={brief}
-              onChange={(event) => setBrief(event.target.value)}
-              placeholder="Senior React engineers in New York with startup experience"
-              rows={3}
-              maxLength={2000}
-              className="w-full resize-y rounded-xl border border-slate-300 p-4 text-sm outline-none focus:border-indigo-500"
-            />
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-slate-500">
-                Filters are extracted from your brief, then applied to the candidate database.
-              </p>
-
-              <button
-                type="submit"
-                disabled={searching || !brief.trim()}
-                className="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {searching ? "Working..." : "Search candidates"}
-              </button>
-            </div>
-          </form>
-
-          {error && (
-            <p
-              role="alert"
-              className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              {error}
-            </p>
-          )}
-        </section>
-
         {searchId && (
-          <section className="mt-7">
+          <section id="results" className="mt-12 scroll-mt-28">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold">
@@ -853,7 +989,7 @@ useEffect(() => {
                   return (
                     <article
                       key={match.candidate_id}
-                      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                      className="rotto-hover-card rounded-[24px] border border-[#eae3f4] bg-white p-6 shadow-[0_8px_25px_rgba(31,25,59,0.035)]"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
@@ -883,7 +1019,7 @@ useEffect(() => {
 
 
                         <div className="flex shrink-0 flex-col items-end gap-2">
-                          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                          <span className="rounded-full bg-[#e9e1ff] px-4 py-2 text-xs font-bold text-[#6244e6]">
                             Score {match.rank_score}
                           </span>
 
@@ -893,7 +1029,7 @@ useEffect(() => {
                               void updateShortlistCandidate(match.candidate_id, "add")
                             }
                             disabled={workspaceBusy || !selectedShortlistId}
-                            className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-40"
+                            className="rounded-full border border-[#d8caff] bg-[#f5f0ff] px-4 py-2 text-xs font-bold text-[#6244e6] hover:bg-[#e9e1ff] disabled:opacity-40"
                           >
                             Add to shortlist
                           </button>
@@ -956,6 +1092,86 @@ useEffect(() => {
             )}
           </section>
         )}
+
+        <footer className="mt-24 space-y-14 pb-8">
+          {/* Separate lavender call-to-action card */}
+          <section className="mx-auto max-w-5xl rounded-[36px] border border-[#e4d8ff] bg-[#f0eaff] px-7 py-16 text-center sm:px-12 sm:py-20">
+            <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-[#7658f6]">
+              Ready to find your next hire?
+            </p>
+
+            <h2 className="mx-auto mt-7 max-w-3xl text-4xl font-extrabold leading-[1.15] tracking-[-0.055em] text-[#21183b] sm:text-5xl">
+              Your next great hire
+              <span className="block text-[#7658f6]">
+                is one search away.
+              </span>
+            </h2>
+
+            <p className="mx-auto mt-7 max-w-xl text-sm leading-7 text-[#6b6280] sm:text-base">
+              Describe what you&apos;re looking for. Explore matching
+              profiles and build a shortlist worth reviewing.
+            </p>
+
+            <a
+              href="#search"
+              className="mt-9 inline-flex items-center gap-2 rounded-full bg-[#7658f6] px-7 py-3.5 text-sm font-bold text-white shadow-[0_8px_24px_rgba(118,88,246,0.18)] hover:-translate-y-0.5 hover:bg-[#6244e6]"
+            >
+              Start searching
+              <span aria-hidden="true">↗</span>
+            </a>
+          </section>
+
+          {/* Separate dark footer card */}
+          <div className="rounded-[36px] bg-[#21183b] px-8 pb-8 pt-14 text-white sm:px-12 sm:pt-16">
+            <div className="grid gap-12 sm:grid-cols-[1.2fr_1fr]">
+              <div>
+                <a
+                  href="#search"
+                  className="text-5xl font-extrabold tracking-[-0.08em]"
+                >
+                  rotto<span className="text-[#c6ffb0]">.</span>
+                </a>
+
+                <p className="mt-5 max-w-xs text-sm leading-7 text-[#c9c0da]">
+                  Search naturally. Build better shortlists.
+                </p>
+              </div>
+
+              <nav
+                aria-label="Footer navigation"
+                className="flex flex-col gap-4 sm:items-start sm:pl-12"
+              >
+                <p className="mb-1 text-sm font-bold text-white">
+                  Explore
+                </p>
+
+                <a href="#search" className="text-sm text-[#c9c0da] hover:text-white">
+                  Search
+                </a>
+                <a href="#saved-briefs" className="text-sm text-[#c9c0da] hover:text-white">
+                  Saved briefs
+                </a>
+                <a href="#shortlists" className="text-sm text-[#c9c0da] hover:text-white">
+                  Shortlists
+                </a>
+                <a href="#saved-candidates" className="text-sm text-[#c9c0da] hover:text-white">
+                  Candidates
+                </a>
+              </nav>
+            </div>
+
+            <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-white/20 pt-7">
+              <p className="text-xs text-[#c9c0da]">
+                Powered by Next.js + Supabase
+              </p>
+
+              <p className="text-xs font-medium text-white">
+                Designed &amp; built by shravanips
+                <span className="ml-2 text-[#d7b4ff]" aria-hidden="true">♡</span>
+              </p>
+            </div>
+          </div>
+        </footer>
       </div>
     </main>
   );

@@ -97,6 +97,16 @@ export async function POST(request: Request) {
       searches_remaining: created.searches_remaining,
     });screenTop
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Unsupported search requirements:")
+    ) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 422 }
+      );
+    }
+
     console.error("Search API failed:", error);
 
     return NextResponse.json(

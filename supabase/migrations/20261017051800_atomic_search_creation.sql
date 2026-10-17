@@ -101,12 +101,12 @@ begin
     m.candidate_id,
     (m.ordinality - 1)::integer,
     m.rank_score
-  from jsonb_to_recordset(p_matches)
-       with ordinality as m(
-         candidate_id text,
-         rank_score integer,
-         ordinality bigint
-       );
+  from rows from (
+    jsonb_to_recordset(p_matches) as (
+      candidate_id text,
+      rank_score integer
+    )
+  ) with ordinality as m;
 
   if v_plan = 'free' then
     update public.company_plans cp

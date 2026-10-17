@@ -1,4 +1,6 @@
 
+import { unstable_rethrow } from "next/navigation";
+
 import { NextResponse } from "next/server";
 import { authenticateRecruiter } from "@/lib/auth/recruiter";
 
@@ -40,7 +42,9 @@ export async function GET(request: Request) {
       plan: companyPlan.plan,
       searches_remaining: searchesRemaining,
     });
-  } catch (error) {
+} catch (error) {
+    unstable_rethrow(error);
+
     console.error("Plan API failed:", error);
 
     return NextResponse.json(

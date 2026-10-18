@@ -57,6 +57,8 @@ make dev
 
 Open **http://localhost:3000/login**.
 
+**Note: I'd recommend using Incognito Mode for better debugging -> thats what I used while testing and demonstrating it in the video**
+
 `make setup` installs dependencies, starts local Supabase, applies database migrations, seeds the recruiter accounts, imports the 5,000 candidate records, and configures the local development environment.
 
 ### Demo Accounts

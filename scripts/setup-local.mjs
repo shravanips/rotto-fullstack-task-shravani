@@ -60,7 +60,9 @@ envMap.set("NEXT_PUBLIC_SUPABASE_URL", url);
 envMap.set("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", publishableKey);
 envMap.set("SUPABASE_SECRET_KEY", secretKey);
 
-// Local testing is free. A real model key can be added separately.
+// Default to free, deterministic local testing.
+// To use the real OpenAI parser, set MOCK_LLM=false and OPENAI_API_KEY
+// in .env.local after setup. Never commit API keys.
 if (!envMap.has("MOCK_LLM")) {
   envMap.set("MOCK_LLM", "true");
 }

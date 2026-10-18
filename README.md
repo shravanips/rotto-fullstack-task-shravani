@@ -260,6 +260,6 @@ With another week, I would focus on:
 
 ## Demo
 
-**Loom walkthrough:** Coming soon.
+**Loom walkthrough:** https://www.loom.com/share/fc2bae1560624985a191a73c5ad08af7.
 
 The walkthrough demonstrates recruiter authentication, natural-language search, editable filters, ranked results, shortlist creation and management, and free-versus-paid plan behavior.

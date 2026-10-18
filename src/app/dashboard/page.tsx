@@ -816,12 +816,24 @@ async function updateShortlistCandidate(
   }
 }
 useEffect(() => {
-  if (!selectedShortlistId) {
-    setShortlistMembers([]);
-    return;
+  if (!selectedShortlistId) return;
+
+  let cancelled = false;
+
+  async function refreshMembers() {
+    await Promise.resolve();
+
+    if (!cancelled) {
+      await loadShortlistMembers(selectedShortlistId);
+    }
   }
 
-  void loadShortlistMembers(selectedShortlistId);
+  void refreshMembers();
+
+  return () => {
+    cancelled = true;
+  };
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [selectedShortlistId]);
 
@@ -1052,7 +1064,10 @@ useEffect(() => {
             <select
               id="selected-shortlist"
               value={selectedShortlistId}
-              onChange={(event) => setSelectedShortlistId(event.target.value)}
+              onChange={(event) => {
+                setShortlistMembers([]);
+                setSelectedShortlistId(event.target.value);
+              }}
               className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
             >
               {shortlists.length === 0 && (

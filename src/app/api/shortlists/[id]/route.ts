@@ -94,3 +94,104 @@ export async function GET(
     );
   }
 }
+
+export async function PATCH(
+    request: Request,
+    context: RouteContext
+  ) {
+    try {
+      const auth = await authenticateRecruiter(request);
+  
+      if (!auth) {
+        return NextResponse.json(
+          { error: "Unauthorized" },
+          { status: 401 }
+        );
+      }
+  
+      const { id } = await context.params;
+      const body = await request.json().catch(() => null);
+      const name = body?.name;
+  
+      if (
+        typeof name !== "string" ||
+        !name.trim() ||
+        name.trim().length > 100
+      ) {
+        return NextResponse.json(
+          { error: "Shortlist name must contain 1–100 characters" },
+          { status: 400 }
+        );
+      }
+  
+      const { data, error } = await auth.supabase
+        .from("shortlists")
+        .update({ name: name.trim() })
+        .eq("id", id)
+        .eq("company_id", auth.companyId)
+        .select("id, name")
+        .maybeSingle();
+  
+      if (error) throw error;
+  
+      if (!data) {
+        return NextResponse.json(
+          { error: "Shortlist not found" },
+          { status: 404 }
+        );
+      }
+  
+      return NextResponse.json(data);
+    } catch (error) {
+      console.error("Rename shortlist failed:", error);
+  
+      return NextResponse.json(
+        { error: "Could not rename shortlist" },
+        { status: 500 }
+      );
+    }
+  }
+  
+  export async function DELETE(
+    request: Request,
+    context: RouteContext
+  ) {
+    try {
+      const auth = await authenticateRecruiter(request);
+  
+      if (!auth) {
+        return NextResponse.json(
+          { error: "Unauthorized" },
+          { status: 401 }
+        );
+      }
+  
+      const { id } = await context.params;
+  
+      const { data, error } = await auth.supabase
+        .from("shortlists")
+        .delete()
+        .eq("id", id)
+        .eq("company_id", auth.companyId)
+        .select("id")
+        .maybeSingle();
+  
+      if (error) throw error;
+  
+      if (!data) {
+        return NextResponse.json(
+          { error: "Shortlist not found" },
+          { status: 404 }
+        );
+      }
+  
+      return NextResponse.json({ deleted: true, id });
+    } catch (error) {
+      console.error("Delete shortlist failed:", error);
+  
+      return NextResponse.json(
+        { error: "Could not delete shortlist" },
+        { status: 500 }
+      );
+    }
+  }

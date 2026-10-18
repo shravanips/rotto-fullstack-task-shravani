@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { authenticateRecruiter } from "@/lib/auth/recruiter";
 import { parseBrief } from "@/lib/search/parse-brief";
 
+import { searchFiltersSchema } from "@/lib/search/filters";
+
 export async function POST(request: Request) {
   try {
     const auth = await authenticateRecruiter(request);
@@ -30,7 +32,47 @@ export async function POST(request: Request) {
 
     // The LLM extracts filters only.
     // PostgreSQL performs the actual candidate search.
-    const filters = await parseBrief(brief.trim());
+    // A normal search uses the LLM to extract filters.
+    // A corrected search uses recruiter-edited filters,
+    // validated against the same strict schema.
+    const hasEditedFilters =
+    Object.prototype.hasOwnProperty.call(body, "filters");
+
+    let filters;
+
+    if (hasEditedFilters) {
+    const validation = searchFiltersSchema.safeParse(body.filters);
+
+    if (!validation.success) {
+        return NextResponse.json(
+        { error: "Invalid search filters" },
+        { status: 400 }
+        );
+    }
+
+    filters = validation.data;
+    } else {
+    filters = await parseBrief(brief.trim());
+    }
+
+    // Prevent edited searches from accidentally matching everyone.
+    // The restriction applies only to manually corrected filters.
+    if (hasEditedFilters) {
+        const hasActiveFilters = Object.values(filters).some(
+        (value) =>
+            value !== null &&
+            (!Array.isArray(value) || value.length > 0)
+        );
+    
+        if (!hasActiveFilters) {
+        return NextResponse.json(
+            {
+            error: "At least one search filter is required",
+            },
+            { status: 400 }
+        );
+        }
+    }
 
     const { data: matches, error: searchError } =
       await auth.supabase.rpc("search_candidates", {

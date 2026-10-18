@@ -5,6 +5,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+import {
+  candidateCities,
+  candidateRoles,
+  emptySearchFilters,
+  type SearchFilters,
+} from "@/lib/search/filters";
+
 type CandidateResult = {
   candidate_id: string;
   rank_score: number;
@@ -152,7 +159,9 @@ export default function DashboardPage() {
   const [profiles, setProfiles] = useState<Record<string, Candidate>>({});
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState<Record<string, unknown>>({});
+  const [filters, setFilters] = useState<SearchFilters>(emptySearchFilters);
+  const [editedFilters, setEditedFilters] =
+    useState<SearchFilters>(emptySearchFilters);
   const [plan, setPlan] = useState<Plan | null>(null);
 
   const [savedBriefs, setSavedBriefs] = useState<SavedBrief[]>([]);
@@ -189,7 +198,8 @@ export default function DashboardPage() {
       setProfiles({});
       setTotal(0);
       setPage(1);
-      setFilters({});
+      setFilters(emptySearchFilters);
+      setEditedFilters(emptySearchFilters);
       setPlan(null);
       setSavedBriefs([]);
       setShortlists([]);
@@ -351,7 +361,9 @@ export default function DashboardPage() {
       setSearchId(search.search_id);
       setResults(search.results);
       setTotal(search.total);
-      setFilters(search.filters);
+      const validatedFilters = search.filters as SearchFilters;
+      setFilters(validatedFilters);
+      setEditedFilters(validatedFilters);
       setPage(1);
 
       setPlan((previous) =>
@@ -370,6 +382,83 @@ export default function DashboardPage() {
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Search failed."
+      );
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function applyEditedFilters() {
+    if (!brief.trim() || searching || !searchId) return;
+  
+    const hasActiveFilters = Object.values(editedFilters).some(
+      (value) =>
+        value !== null &&
+        (!Array.isArray(value) || value.length > 0)
+    );
+  
+    if (!hasActiveFilters) {
+      setError("Select at least one filter before applying changes.");
+      return;
+    }
+  
+    setSearching(true);
+    setError("");
+  
+    try {
+      const token = await getToken();
+  
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          brief: brief.trim(),
+          filters: editedFilters,
+        }),
+      });
+  
+      const body = await response.json();
+  
+      if (!response.ok) {
+        throw new Error(
+          body.error ??
+            (response.status === 402
+              ? "You have used your free search. Upgrade to apply more filters."
+              : "Could not apply filters.")
+        );
+      }
+  
+      const search = body as SearchResponse;
+      const validatedFilters = search.filters as SearchFilters;
+  
+      setSearchId(search.search_id);
+      setResults(search.results);
+      setTotal(search.total);
+      setFilters(validatedFilters);
+      setEditedFilters(validatedFilters);
+      setPage(1);
+  
+      setPlan((previous) =>
+        previous
+          ? {
+              ...previous,
+              searches_remaining: search.searches_remaining,
+            }
+          : {
+              plan: "free",
+              searches_remaining: search.searches_remaining,
+            }
+      );
+  
+      await loadProfiles(search.results, token);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not apply filters."
       );
     } finally {
       setSearching(false);
@@ -500,6 +589,134 @@ async function saveCurrentBrief() {
   } catch (caught) {
     setWorkspaceMessage(
       caught instanceof Error ? caught.message : "Could not save brief."
+    );
+  } finally {
+    setWorkspaceBusy(false);
+  }
+}
+
+async function renameShortlist() {
+  if (!selectedShortlistId || workspaceBusy) return;
+
+  const current = shortlists.find(
+    (item) => item.id === selectedShortlistId
+  );
+
+  if (!current) return;
+
+  const newName = window.prompt(
+    "Rename shortlist:",
+    current.name
+  );
+
+  if (newName === null) return;
+
+  const name = newName.trim();
+
+  if (!name || name.length > 100) {
+    setWorkspaceMessage(
+      "Shortlist name must contain 1–100 characters."
+    );
+    return;
+  }
+
+  if (name === current.name) return;
+
+  setWorkspaceBusy(true);
+  setWorkspaceMessage("");
+
+  try {
+    const token = await getToken();
+
+    const response = await fetch(
+      `/api/shortlists/${encodeURIComponent(selectedShortlistId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name }),
+      }
+    );
+
+    const body = await response.json();
+
+    if (!response.ok) {
+      throw new Error(body.error ?? "Could not rename shortlist.");
+    }
+
+    setShortlists((previous) =>
+      previous.map((item) =>
+        item.id === selectedShortlistId
+          ? { ...item, name: body.name }
+          : item
+      )
+    );
+
+    setWorkspaceMessage("Shortlist renamed successfully.");
+  } catch (caught) {
+    setWorkspaceMessage(
+      caught instanceof Error
+        ? caught.message
+        : "Could not rename shortlist."
+    );
+  } finally {
+    setWorkspaceBusy(false);
+  }
+}
+
+async function deleteShortlist() {
+  if (!selectedShortlistId || workspaceBusy) return;
+
+  const current = shortlists.find(
+    (item) => item.id === selectedShortlistId
+  );
+
+  if (!current) return;
+
+  const confirmed = window.confirm(
+    `Delete "${current.name}" and remove its saved candidates from this shortlist?`
+  );
+
+  if (!confirmed) return;
+
+  setWorkspaceBusy(true);
+  setWorkspaceMessage("");
+
+  try {
+    const token = await getToken();
+
+    const response = await fetch(
+      `/api/shortlists/${encodeURIComponent(selectedShortlistId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const body = await response.json();
+
+    if (!response.ok) {
+      throw new Error(body.error ?? "Could not delete shortlist.");
+    }
+
+    const remaining = shortlists.filter(
+      (item) => item.id !== selectedShortlistId
+    );
+
+    setShortlists(remaining);
+    setSelectedShortlistId(remaining[0]?.id ?? "");
+    setShortlistMembers([]);
+
+    setWorkspaceMessage("Shortlist deleted successfully.");
+  } catch (caught) {
+    setWorkspaceMessage(
+      caught instanceof Error
+        ? caught.message
+        : "Could not delete shortlist."
     );
   } finally {
     setWorkspaceBusy(false);
@@ -811,7 +1028,7 @@ useEffect(() => {
                 value={shortlistName}
                 onChange={(event) => setShortlistName(event.target.value)}
                 placeholder="e.g. Frontend candidates"
-                maxLength={120}
+                maxLength={100}
                 className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
               />
 
@@ -848,6 +1065,26 @@ useEffect(() => {
                 </option>
               ))}
             </select>
+
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void renameShortlist()}
+                disabled={workspaceBusy || !selectedShortlistId}
+                className="rounded-lg border border-[#c8d9cf] bg-white px-4 py-2 text-xs font-semibold text-[#315c46] hover:bg-[#f6fff9] disabled:opacity-40"
+              >
+                Rename
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void deleteShortlist()}
+                disabled={workspaceBusy || !selectedShortlistId}
+                className="rounded-lg border border-red-200 bg-white px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-40"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </section>
 
@@ -966,16 +1203,245 @@ useEffect(() => {
               </div>
             </div>
 
-            {Object.keys(filters).length > 0 && (
-              <details className="mb-5 rounded-lg border border-slate-200 bg-white p-4">
-                <summary className="cursor-pointer text-sm font-medium">
-                  View extracted search filters
-                </summary>
-                <pre className="mt-3 overflow-x-auto text-xs text-slate-600">
-                  {JSON.stringify(filters, null, 2)}
-                </pre>
-              </details>
-            )}
+            <div className="mb-6 rounded-2xl border border-[#e7ddff] bg-[#faf8ff] p-5 sm:p-6">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-[#222222]">
+                    Refine your search
+                  </h3>
+                  <p className="mt-1 text-sm text-[#777777]">
+                    Edit or remove the filters we understood from your brief.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditedFilters(emptySearchFilters);
+                  }}
+                  disabled={searching}
+                  className="text-xs font-semibold text-[#7658f6] hover:underline disabled:opacity-50"
+                >
+                  Clear all
+                </button>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  City
+                  <select
+                    value={editedFilters.city ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        city: event.target.value
+                          ? (event.target.value as SearchFilters["city"])
+                          : null,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  >
+                    <option value="">Any city</option>
+                    {candidateCities.map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Seniority
+                  <select
+                    value={editedFilters.seniority ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        seniority: event.target.value
+                          ? (event.target.value as SearchFilters["seniority"])
+                          : null,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  >
+                    <option value="">Any seniority</option>
+                    {["junior", "mid", "senior", "staff"].map((level) => (
+                      <option key={level} value={level}>
+                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Role
+                  <select
+                    value={editedFilters.roles?.[0] ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        roles: event.target.value
+                          ? [event.target.value as (typeof candidateRoles)[number]]
+                          : null,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  >
+                    <option value="">Any role</option>
+                    {candidateRoles.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Company type
+                  <select
+                    value={editedFilters.company_type ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        company_type: event.target.value
+                          ? (event.target.value as SearchFilters["company_type"])
+                          : null,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  >
+                    <option value="">Any company</option>
+                    <option value="startup">Startup</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Degree
+                  <select
+                    value={editedFilters.degree ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        degree: event.target.value
+                          ? (event.target.value as SearchFilters["degree"])
+                          : null,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  >
+                    <option value="">Any degree</option>
+                    {["BA", "BS", "MBA", "MS", "PhD"].map((degree) => (
+                      <option key={degree} value={degree}>
+                        {degree}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Open to work
+                  <select
+                    value={
+                      editedFilters.open_to_work === null
+                        ? ""
+                        : String(editedFilters.open_to_work)
+                    }
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        open_to_work:
+                          event.target.value === ""
+                            ? null
+                            : event.target.value === "true",
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  >
+                    <option value="">Any status</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Skills (comma-separated)
+                  <input
+                    type="text"
+                    value={(editedFilters.skills ?? []).join(", ")}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        skills:
+                          event.target.value.trim() === ""
+                            ? null
+                            : event.target.value
+                                .split(",")
+                                .map((skill) => skill.trim())
+                                .filter(Boolean),
+                      }))
+                    }
+                    placeholder="React, TypeScript"
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  School
+                  <input
+                    type="text"
+                    value={editedFilters.school ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        school: event.target.value.trim() || null,
+                      }))
+                    }
+                    placeholder="University name"
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  />
+                </label>
+
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  Minimum experience (years)
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={editedFilters.min_years_experience ?? ""}
+                    onChange={(event) =>
+                      setEditedFilters((previous) => ({
+                        ...previous,
+                        min_years_experience:
+                          event.target.value === ""
+                            ? null
+                            : Number(event.target.value),
+                      }))
+                    }
+                    placeholder="Any experience"
+                    className="w-full rounded-xl border border-[#e4d9ff] bg-white p-3 text-sm text-[#222222]"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e7ddff] pt-4">
+                <p className="text-xs text-slate-500">
+                  Applying changes runs a new search and uses one search credit.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => void applyEditedFilters()}
+                  disabled={
+                    searching ||
+                    JSON.stringify(editedFilters) === JSON.stringify(filters)
+                  }
+                  className="rounded-xl bg-[#7658f6] px-5 py-3 text-sm font-bold text-white hover:bg-[#6244e6] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {searching ? "Applying..." : "Apply filters"}
+                </button>
+              </div>
+            </div>
 
             {results.length === 0 ? (
               <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
